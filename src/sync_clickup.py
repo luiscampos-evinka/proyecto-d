@@ -97,8 +97,8 @@ def extract_body(raw: str, allowed_emojis):
 
 def clean_body(raw: str):
     body = raw.replace('*', ' ').strip()
-    body = re.sub(r'^COMUNICADO\s*[📢📣]?\s*', '', body, flags=re.I)
     body = body.replace('📢', ' ').replace('📣', ' ')
+    body = re.sub(r'^\s*COMUNICADO\b\s*', '', body, flags=re.I)
     body = re.sub(r'\s+', ' ', body).strip(' ,.-')
     return body
 

@@ -1,0 +1,2 @@
+# Proyecto D usa solo librerías estándar de Python.
+# Recomendado: Python 3.11+

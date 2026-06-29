@@ -98,6 +98,12 @@ python3 src/whatsapp_watcher.py --sleep-seconds 3
 - Supabase = trazabilidad opcional
 - logs locales/state = soporte técnico local
 
-## 8. Compatibilidad
+## 8. Pruebas locales
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+## 9. Compatibilidad
 
 La lógica operativa se mantiene igual; esta portableización solo cambia la forma de resolver rutas y configuración para que el repo pueda replicarse en otros entornos.

@@ -79,6 +79,9 @@ Plantilla de configuración sin secretos para desplegar el flujo en otro entorno
 ### `INSTALL.md`
 Guía de instalación portable para clonar el repo, crear secretos locales, configurar paths y ejecutar el watcher/router fuera del VPS original.
 
+### `requirements.txt`
+Declara el baseline de entorno del proyecto. En este caso el runtime usa solo librerías estándar de Python y recomienda Python 3.11+.
+
 ## 6. Reglas operativas
 
 - Solo se aceptan remitentes del allowlist.
@@ -156,6 +159,8 @@ src/
   supabase_store.py
   sync_clickup.py
   whatsapp_watcher.py
+tests/
+  test_sync_clickup.py
 ```
 
 ## 13. Instalación y replicación
