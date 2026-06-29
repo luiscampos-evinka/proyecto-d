@@ -1,0 +1,34 @@
+{
+  "project_key": "proyecto_d",
+  "clickup": {
+    "token_path": "/ABSOLUTE/PATH/TO/proyecto_d_clickup_token",
+    "list_id": "YOUR_CLICKUP_LIST_ID",
+    "api": "https://api.clickup.com/api/v2"
+  },
+  "routing": {
+    "allowed_senders": [
+      "+51936005850",
+      "+51904432138"
+    ],
+    "require_emoji": true,
+    "allowed_emojis": [
+      "📢",
+      "📣"
+    ],
+    "visible_output": "NO_REPLY"
+  },
+  "supabase": {
+    "env_path": "/ABSOLUTE/PATH/TO/proyecto_d_supabase.env",
+    "schema": "public",
+    "tables": {
+      "inbound_messages": "proyecto_d_inbound_messages",
+      "clickup_sync_events": "proyecto_d_clickup_sync_events",
+      "processing_errors": "proyecto_d_processing_errors"
+    }
+  },
+  "paths": {
+    "state_path": "./state/whatsapp_state.json",
+    "audit_log_path": "./state/audit.log",
+    "supabase_error_log_path": "./state/supabase_errors.log"
+  }
+}
