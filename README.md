@@ -130,40 +130,39 @@ El diseño contempla operación continua mediante un **cron silencioso** que eje
 - Las credenciales de Supabase deben vivir fuera del repo.
 - Los logs y estados locales deben ignorarse en Git.
 
-## 12. Estructura de esta carpeta
+## 12. Estructura del repositorio
 
 ```text
-proyecto-d/
-  README.md
-  .gitignore
-  config/
-    config.example.json
-  docs/
-    INFORME_TECNICO.md
-  legacy/
-    proyecto_d_clickup_sync.py
-  schema/
-    proyecto_d_supabase_schema.sql
-  src/
-    router.py
-    supabase_store.py
-    sync_clickup.py
-    whatsapp_watcher.py
+README.md
+.gitignore
+config/
+  config.example.json
+docs/
+  INFORME_TECNICO.md
+legacy/
+  proyecto_d_clickup_sync.py
+schema/
+  proyecto_d_supabase_schema.sql
+src/
+  router.py
+  supabase_store.py
+  sync_clickup.py
+  whatsapp_watcher.py
 ```
 
-## 13. Qué queda pendiente antes de dejarlo publicado formalmente en GitHub
+## 13. Próximos pasos recomendados
 
-- decidir si esta carpeta se sube dentro del repo actual o a un repo independiente,
 - crear `config/config.json` real en el entorno objetivo,
 - validar credenciales de ClickUp y Supabase en el entorno destino,
 - probar ingreso real de mensajes desde WhatsApp con canal ya conectado,
+- agregar monitoreo explícito de salud del canal WhatsApp,
 - opcionalmente agregar tests unitarios para parsing y clasificación de estados.
 
-## 14. Recomendación de publicación
+## 14. Estado de publicación
 
-Mi recomendación es:
+Este módulo ya fue separado y publicado como repositorio independiente para mantener:
 
-1. **subir esta carpeta como módulo separado dentro del repo actual**, o
-2. **extraerla a un repositorio propio `proyecto-d`** si quieres independencia total de historial, issues y despliegue.
-
-Si quieres, el siguiente paso lo hago yo: dejar esto **commiteado y empujado a GitHub** con un commit limpio solo de Proyecto D.
+- aislamiento de código,
+- historial propio,
+- documentación técnica propia,
+- y una ruta clara de mantenimiento/evolución.
