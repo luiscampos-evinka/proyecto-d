@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import json
+import mimetypes
 import re
 import unicodedata
+import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +55,15 @@ def api(config, method, path, data=None):
         return json.load(r)
 
 
+def api_bytes(config, method, path, body: bytes, headers: dict):
+    token = load_token(config)
+    req_headers = {'Authorization': token, **headers}
+    req = urllib.request.Request(api_base(config) + path, data=body, method=method, headers=req_headers)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        raw = r.read().decode('utf-8')
+        return json.loads(raw) if raw else {}
+
+
 def normalize_text(s: str) -> str:
     s = unicodedata.normalize('NFKD', s)
     s = ''.join(ch for ch in s if not unicodedata.combining(ch))
@@ -84,6 +97,98 @@ def clean_body(raw: str):
     body = body.replace('📢', ' ').replace('📣', ' ')
     body = re.sub(r'\s+', ' ', body).strip(' ,.-')
     return body
+
+
+def sanitize_filename(value: str) -> str:
+    value = (value or '').strip()
+    value = value.replace(' ', '_')
+    value = re.sub(r'[^A-Za-z0-9._-]+', '_', value)
+    return value.strip('._-') or 'attachment'
+
+
+def guess_extension(mime_type: str) -> str:
+    ext = mimetypes.guess_extension((mime_type or '').split(';', 1)[0].strip())
+    return ext or ''
+
+
+def attachment_filename(message_id: str, attachment: dict, position: int) -> str:
+    existing = attachment.get('filename') or attachment.get('name')
+    if existing:
+        name = sanitize_filename(existing)
+        if '.' in name:
+            return name
+        return name + guess_extension(attachment.get('mime_type') or attachment.get('mimeType') or '')
+    return f"{sanitize_filename(message_id)}-attachment-{position}{guess_extension(attachment.get('mime_type') or attachment.get('mimeType') or '')}"
+
+
+def decode_attachment_bytes(attachment: dict) -> bytes:
+    if attachment.get('data'):
+        return base64.b64decode(attachment['data'])
+    if attachment.get('path'):
+        return Path(attachment['path']).read_bytes()
+    if attachment.get('url'):
+        with urllib.request.urlopen(attachment['url'], timeout=60) as response:
+            return response.read()
+    raise ValueError('attachment_without_content')
+
+
+def upload_task_attachment(config, task_id: str, attachment: dict, *, message_id: str, position: int):
+    filename = attachment_filename(message_id, attachment, position)
+    mime_type = attachment.get('mime_type') or attachment.get('mimeType') or 'application/octet-stream'
+    file_bytes = decode_attachment_bytes(attachment)
+    boundary = f"----ProyectoDBoundary{datetime.now(timezone.utc).timestamp():.6f}".replace('.', '')
+    head = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="attachment"; filename="{filename}"\r\n'
+        f"Content-Type: {mime_type}\r\n\r\n"
+    ).encode('utf-8')
+    tail = f"\r\n--{boundary}--\r\n".encode('utf-8')
+    body = head + file_bytes + tail
+    response = api_bytes(config, 'POST', f'/task/{task_id}/attachment', body, {
+        'Content-Type': f'multipart/form-data; boundary={boundary}',
+        'Accept': 'application/json',
+        'Content-Length': str(len(body)),
+    })
+    return {
+        'filename': filename,
+        'mime_type': mime_type,
+        'size_bytes': len(file_bytes),
+        'response': response,
+    }
+
+
+def create_task_comment(config, task_id: str, comment_text: str):
+    if not comment_text:
+        return None
+    return api(config, 'POST', f'/task/{task_id}/comment', {'comment_text': comment_text})
+
+
+def summarize_attachments(message_id: str, attachments: list[dict]):
+    lines = []
+    for position, attachment in enumerate(attachments or [], start=1):
+        lines.append(
+            f"- {attachment_filename(message_id, attachment, position)} ({attachment.get('mime_type') or attachment.get('mimeType') or attachment.get('type') or 'archivo'})"
+        )
+    return lines
+
+
+def build_context_block(*, sender: str | None, timestamp: str | None, message_id: str, body: str, attachments: list[dict], target_status: str | None):
+    lines = [
+        'PROYECTO D · EVENTO WHATSAPP',
+        f'- message_id: {message_id}',
+    ]
+    if sender:
+        lines.append(f'- remitente: {sender}')
+    if timestamp:
+        lines.append(f'- timestamp: {timestamp}')
+    if target_status:
+        lines.append(f'- status detectado: {target_status}')
+    lines.append('- mensaje original:')
+    lines.append(body)
+    if attachments:
+        lines.append('- adjuntos:')
+        lines.extend(summarize_attachments(message_id, attachments))
+    return '\n'.join(lines)
 
 
 PROJECT_SPLIT_MARKERS = [
@@ -279,8 +384,7 @@ def canonical_name(project_raw: str):
 
 
 def append_note(desc: str, note: str):
-    ts = datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M')
-    block = f'\n\n[{ts}] {note}'
+    block = f'\n\n{note}'
     desc = desc or ''
     if note in desc:
         return desc
@@ -303,7 +407,7 @@ def save_state(config, state):
     p.write_text(json.dumps(state, ensure_ascii=False, indent=2))
 
 
-def process_message(config, message_id: str, body: str):
+def process_message(config, message_id: str, body: str, *, sender: str | None = None, timestamp: str | None = None, attachments: list[dict] | None = None):
     state = load_state(config)
     if message_id in state['processed_ids']:
         return {
@@ -325,14 +429,29 @@ def process_message(config, message_id: str, body: str):
         }
 
     target_status = classify_status(parsed['rest'])
+    attachments = attachments or []
+    context_block = build_context_block(
+        sender=sender,
+        timestamp=timestamp,
+        message_id=message_id,
+        body=parsed['body'],
+        attachments=attachments,
+        target_status=target_status,
+    )
     tasks = existing_tasks(config)
     match = find_match(parsed['project_raw'], tasks)
+    comment = None
+    comment_error = None
     if match:
         current_desc = match.get('description') or ''
-        update = {'description': append_note(current_desc, parsed['body'])}
+        update = {'description': append_note(current_desc, context_block)}
         if target_status:
             update['status'] = target_status
         res = api(config, 'PUT', f"/task/{match['id']}", update)
+        try:
+            comment = create_task_comment(config, res.get('id') or match['id'], context_block)
+        except Exception as err:
+            comment_error = str(err)
         out = {
             'status': 'updated',
             'task_id': res.get('id'),
@@ -341,10 +460,11 @@ def process_message(config, message_id: str, body: str):
             'clickup_action': 'updated',
             'project_guess': parsed['project_raw'],
             'clickup_target_status': target_status,
+            'comment_id': (comment or {}).get('id'),
         }
     else:
         name = canonical_name(parsed['project_raw'])
-        create = {'name': name, 'description': parsed['body']}
+        create = {'name': name, 'description': context_block}
         if target_status:
             create['status'] = target_status
         list_id = config['clickup']['list_id']
@@ -358,6 +478,32 @@ def process_message(config, message_id: str, body: str):
             'project_guess': parsed['project_raw'],
             'clickup_target_status': target_status,
         }
+
+    uploaded_attachments = []
+    attachment_errors = []
+    for position, attachment in enumerate(attachments, start=1):
+        try:
+            uploaded_attachments.append(upload_task_attachment(
+                config,
+                out['task_id'],
+                attachment,
+                message_id=message_id,
+                position=position,
+            ))
+        except Exception as err:
+            attachment_errors.append({
+                'filename': attachment_filename(message_id, attachment, position),
+                'error': str(err),
+            })
+
+    out['attachment_uploads'] = uploaded_attachments
+    if attachment_errors:
+        out['attachment_errors'] = attachment_errors
+    out['attachment_count'] = len(uploaded_attachments)
+    if comment is not None:
+        out['comment_id'] = comment.get('id')
+    if comment_error:
+        out['comment_error'] = comment_error
 
     state['processed_ids'].append(message_id)
     state['processed_ids'] = state['processed_ids'][-500:]

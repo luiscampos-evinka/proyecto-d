@@ -27,6 +27,12 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def load_payload_file(path: str | None):
+    if not path:
+        return {}
+    return json.loads(Path(path).read_text(encoding='utf-8'))
+
+
 def build_base_message_row(config: dict, sender: str, message_id: str, body: str):
     allowed_emojis = config['routing'].get('allowed_emojis', ['📢', '📣'])
     return {
@@ -46,18 +52,26 @@ def build_base_message_row(config: dict, sender: str, message_id: str, body: str
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--config', default=str(DEFAULT_CONFIG_PATH))
-    ap.add_argument('--sender', required=True)
-    ap.add_argument('--message-id', required=True)
-    ap.add_argument('--body', required=True)
+    ap.add_argument('--payload-file')
+    ap.add_argument('--sender')
+    ap.add_argument('--message-id')
+    ap.add_argument('--body')
     args = ap.parse_args()
 
     config = load_config(Path(args.config))
-    sender = normalize_sender(args.sender)
+    payload = load_payload_file(args.payload_file)
+    sender = normalize_sender(payload.get('sender') or args.sender)
+    message_id = payload.get('message_id') or args.message_id
+    body = payload.get('body') or args.body
+    timestamp = payload.get('timestamp')
+    attachments = payload.get('attachments') or []
+    if not sender or not message_id or body is None:
+        raise SystemExit('sender, message-id y body son requeridos')
     allowed = {normalize_sender(v) for v in config['routing'].get('allowed_senders', [])}
     audit_log_path = Path(config['paths']['audit_log_path'])
     store = create_store(config)
 
-    base_row = build_base_message_row(config, sender, args.message_id, args.body)
+    base_row = build_base_message_row(config, sender, message_id, body)
     if store:
         store.safe_upsert_inbound_message(base_row)
 
@@ -66,11 +80,11 @@ def main():
         append_audit(audit_log_path, {
             'project': config.get('project_key'),
             'sender': sender,
-            'message_id': args.message_id,
+            'message_id': message_id,
             'result': 'ignored_sender',
         })
         if store:
-            store.safe_finalize_inbound_message(args.message_id, {
+            store.safe_finalize_inbound_message(message_id, {
                 'result_status': 'ignored_sender',
                 'error_text': 'sender_not_allowed',
                 'result_payload': result,
@@ -80,25 +94,39 @@ def main():
         return
 
     try:
-        result = process_message(config, args.message_id, args.body)
+        result = process_message(
+            config,
+            message_id,
+            body,
+            sender=sender,
+            timestamp=timestamp,
+            attachments=attachments,
+        )
     except Exception as err:
         append_audit(audit_log_path, {
             'project': config.get('project_key'),
             'sender': sender,
-            'message_id': args.message_id,
+            'message_id': message_id,
             'result': 'error',
             'error': str(err),
         })
         if store:
             payload = {
-                'message_id': args.message_id,
+                'message_id': message_id,
                 'sender': sender,
                 'stage': 'process_message',
                 'error_text': str(err),
-                'payload': {'body': args.body},
+                'payload': {
+                    'body': body,
+                    'attachments': [{
+                        'filename': item.get('filename'),
+                        'mime_type': item.get('mime_type'),
+                        'type': item.get('type'),
+                    } for item in attachments],
+                },
             }
             store.safe_log_processing_error(payload)
-            store.safe_finalize_inbound_message(args.message_id, {
+            store.safe_finalize_inbound_message(message_id, {
                 'result_status': 'error',
                 'error_text': str(err),
                 'processed_at': now_iso(),
@@ -108,13 +136,13 @@ def main():
     append_audit(audit_log_path, {
         'project': config.get('project_key'),
         'sender': sender,
-        'message_id': args.message_id,
+        'message_id': message_id,
         'result': result,
     })
 
     if store:
-        store.safe_finalize_inbound_message(args.message_id, {
-            'normalized_body': args.body.strip(),
+        store.safe_finalize_inbound_message(message_id, {
+            'normalized_body': body.strip(),
             'project_guess': result.get('project_guess'),
             'result_status': result.get('status'),
             'clickup_action': result.get('clickup_action'),
@@ -127,7 +155,7 @@ def main():
         })
         if result.get('status') in {'created', 'updated'}:
             store.safe_log_clickup_event({
-                'message_id': args.message_id,
+                'message_id': message_id,
                 'event_type': result.get('clickup_action') or result.get('status'),
                 'clickup_task_id': result.get('task_id'),
                 'clickup_task_name': result.get('name'),

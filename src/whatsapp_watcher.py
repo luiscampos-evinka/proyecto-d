@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -11,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = PROJECT_ROOT / 'config' / 'config.json'
 STATE_PATH = PROJECT_ROOT / 'state' / 'watcher_state.json'
 ROUTER = str(PROJECT_ROOT / 'src' / 'router.py')
+PAYLOAD_DIR = PROJECT_ROOT / 'state' / 'payloads'
 CONVERSATION_INFO_RE = re.compile(r'Conversation info \(untrusted metadata\):\n```json\n(.*?)\n```', re.S)
 
 
@@ -33,6 +35,11 @@ def normalize_sender(value: str) -> str:
 
 def load_config():
     return load_json(CONFIG_PATH, {})
+
+
+def sanitize_token(value: str) -> str:
+    cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', str(value or '').strip())
+    return cleaned.strip('._-') or 'attachment'
 
 
 def extract_text_blocks(msg):
@@ -71,6 +78,52 @@ def extract_original_body(text):
             continue
         cleaned.append(line)
     return '\n'.join(cleaned).strip()
+
+
+def guess_filename(message_id: str, index: int, block: dict) -> str:
+    raw_name = block.get('filename') or block.get('fileName') or block.get('name') or block.get('title')
+    if raw_name:
+        return sanitize_token(raw_name)
+    ext = mimetypes.guess_extension(block.get('mimeType') or '') or ''
+    return f"{sanitize_token(message_id)}-attachment-{index}{ext}"
+
+
+def extract_attachments(msg: dict, message_id: str):
+    attachments = []
+    for index, block in enumerate(msg.get('content', []) or [], start=1):
+        block_type = block.get('type')
+        if block_type == 'text':
+            continue
+        data = block.get('data')
+        url = block.get('url') or block.get('href')
+        path = block.get('path')
+        if not data and not url and not path:
+            continue
+        attachment = {
+            'index': index,
+            'type': block_type,
+            'mime_type': block.get('mimeType') or 'application/octet-stream',
+            'filename': guess_filename(message_id, index, block),
+        }
+        if data:
+            attachment['data'] = data
+        if url:
+            attachment['url'] = url
+        if path:
+            attachment['path'] = path
+        attachments.append(attachment)
+    return attachments
+
+
+def payload_path(message_id: str) -> Path:
+    return PAYLOAD_DIR / f"{sanitize_token(message_id)}.json"
+
+
+def write_payload(payload: dict) -> Path:
+    path = payload_path(payload.get('message_id', 'message'))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+    return path
 
 
 def session_registry_paths():
@@ -134,13 +187,26 @@ def process_session_file(session_file: Path, state: dict, allowed_senders: set[s
             body = extract_original_body(text)
             if not body or not any(e in body for e in allowed_emojis):
                 continue
-            subprocess.run([
-                'python3',
-                ROUTER,
-                '--sender', sender,
-                '--message-id', message_id,
-                '--body', body,
-            ], check=False)
+            attachments = extract_attachments(msg, message_id)
+            payload = {
+                'sender': sender,
+                'message_id': message_id,
+                'body': body,
+                'timestamp': info.get('timestamp'),
+                'attachments': attachments,
+            }
+            payload_file = write_payload(payload)
+            try:
+                subprocess.run([
+                    'python3',
+                    ROUTER,
+                    '--payload-file', str(payload_file),
+                ], check=False)
+            finally:
+                try:
+                    payload_file.unlink()
+                except FileNotFoundError:
+                    pass
             seen.add(message_id)
             processed += 1
     state['processed_message_ids'] = list(seen)[-2000:]
