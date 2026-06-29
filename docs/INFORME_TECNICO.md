@@ -68,6 +68,7 @@ Un remitente autorizado envía un mensaje por WhatsApp con el emoji operativo.
 - detecta intención/estado,
 - busca coincidencias con tareas existentes,
 - crea o actualiza la tarea correcta en ClickUp.
+- si el mensaje trae adjuntos, construye además un resumen contextual y los asocia a la misma tarea en ClickUp.
 
 ### 5.5 Persistencia
 Si Supabase está configurado, el sistema registra:

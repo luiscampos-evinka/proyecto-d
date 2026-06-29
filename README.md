@@ -61,6 +61,7 @@ Contiene la lógica de negocio:
 - busca coincidencia en ClickUp,
 - crea o actualiza tareas,
 - evita duplicados por `message_id`.
+- si el mensaje trae adjuntos, arma también un resumen contextual y los sube a la misma tarea de ClickUp.
 
 ### `src/supabase_store.py`
 Persistencia técnica hacia Supabase para:
