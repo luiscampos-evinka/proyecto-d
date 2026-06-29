@@ -76,6 +76,9 @@ DDL base para las tablas de trazabilidad de Proyecto D.
 ### `config/config.example.json`
 Plantilla de configuración sin secretos para desplegar el flujo en otro entorno.
 
+### `INSTALL.md`
+Guía de instalación portable para clonar el repo, crear secretos locales, configurar paths y ejecutar el watcher/router fuera del VPS original.
+
 ## 6. Reglas operativas
 
 - Solo se aceptan remitentes del allowlist.
@@ -130,14 +133,17 @@ El diseño contempla operación continua mediante un **cron silencioso** que eje
 - El token de ClickUp debe vivir fuera del repo.
 - Las credenciales de Supabase deben vivir fuera del repo.
 - Los logs y estados locales deben ignorarse en Git.
+- Esta versión portable resuelve rutas relativas desde `config/config.json` y permite overrides por variables de entorno.
 
 ## 12. Estructura del repositorio
 
 ```text
 README.md
+INSTALL.md
 .gitignore
 config/
   config.example.json
+  proyecto_d_supabase.env.example
 docs/
   INFORME_TECNICO.md
 legacy/
@@ -146,18 +152,21 @@ schema/
   proyecto_d_supabase_schema.sql
 src/
   router.py
+  runtime_paths.py
   supabase_store.py
   sync_clickup.py
   whatsapp_watcher.py
 ```
 
-## 13. Próximos pasos recomendados
+## 13. Instalación y replicación
 
-- crear `config/config.json` real en el entorno objetivo,
-- validar credenciales de ClickUp y Supabase en el entorno destino,
-- probar ingreso real de mensajes desde WhatsApp con canal ya conectado,
-- agregar monitoreo explícito de salud del canal WhatsApp,
-- opcionalmente agregar tests unitarios para parsing y clasificación de estados.
+Para replicarlo en otro entorno:
+
+1. copiar `config/config.example.json` a `config/config.json`,
+2. crear `secrets/proyecto_d_clickup_token`,
+3. completar `config/proyecto_d_supabase.env` si usarás Supabase,
+4. ajustar `runtime.session_registry_roots` o `PROYECTO_D_SESSION_ROOTS` si OpenClaw vive en otra ruta,
+5. seguir `INSTALL.md`.
 
 ## 14. Estado de publicación
 
@@ -166,4 +175,5 @@ Este módulo ya fue separado y publicado como repositorio independiente para man
 - aislamiento de código,
 - historial propio,
 - documentación técnica propia,
-- y una ruta clara de mantenimiento/evolución.
+- una ruta clara de mantenimiento/evolución,
+- y una versión portable para GitHub sin depender de rutas fijas del VPS original.

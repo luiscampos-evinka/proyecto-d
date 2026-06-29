@@ -6,6 +6,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from runtime_paths import resolve_path
+
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
@@ -123,7 +125,7 @@ class SupabaseStore:
 
 def create_store(config: dict):
     sb = config.get('supabase') or {}
-    env_path = Path(sb.get('env_path', '')) if sb.get('env_path') else None
+    env_path = resolve_path(sb.get('env_path', ''), config_path=config.get('_config_path')) if sb.get('env_path') else None
     env = load_env_file(env_path) if env_path else {}
     url = env.get('SUPABASE_URL') or os.getenv('SUPABASE_URL')
     key = env.get('SUPABASE_SECRET_KEY') or env.get('SUPABASE_SERVICE_ROLE_KEY') or env.get('SUPABASE_KEY') or os.getenv('SUPABASE_SECRET_KEY') or os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_KEY')
@@ -132,7 +134,7 @@ def create_store(config: dict):
     error_log_path = None
     paths = config.get('paths') or {}
     if paths.get('supabase_error_log_path'):
-        error_log_path = Path(paths['supabase_error_log_path'])
+        error_log_path = resolve_path(paths['supabase_error_log_path'], config_path=config.get('_config_path'))
     return SupabaseStore(
         url=url,
         key=key,

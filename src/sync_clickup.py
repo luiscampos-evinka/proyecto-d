@@ -11,7 +11,9 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_CONFIG_PATH = Path('/root/.openclaw/workspace/scripts/proyecto_d/config.json')
+from runtime_paths import default_config_path, resolve_path
+
+DEFAULT_CONFIG_PATH = default_config_path()
 ALIASES = {
     'CHO': 'CHORRILLOS',
     'MA': 'MAE',
@@ -24,15 +26,18 @@ STOP = {'EL','LA','LOS','LAS','DE','DEL','Y','EN','SU','QUE','SE','A','AL','LO',
 
 
 def load_config(config_path: Path):
-    return json.loads(config_path.read_text())
+    config_path = config_path.expanduser().resolve()
+    data = json.loads(config_path.read_text())
+    data['_config_path'] = str(config_path)
+    return data
 
 
 def token_path(config):
-    return Path(config['clickup']['token_path'])
+    return resolve_path(config['clickup']['token_path'], config_path=config.get('_config_path'))
 
 
 def state_path(config):
-    return Path(config['paths']['state_path'])
+    return resolve_path(config['paths']['state_path'], config_path=config.get('_config_path'))
 
 
 def api_base(config):
@@ -394,6 +399,56 @@ def append_note(desc: str, note: str):
     return (desc + block).strip()
 
 
+def find_task_by_message_id(tasks, message_id: str):
+    marker = f'message_id: {message_id}'
+    for task in tasks or []:
+        description = task.get('description') or ''
+        if marker in description:
+            return task
+    return None
+
+
+def backfill_duplicate_attachments(config, *, message_id: str, attachments: list[dict], tasks):
+    if not attachments:
+        return None
+    match = find_task_by_message_id(tasks, message_id)
+    if not match:
+        return None
+
+    uploaded_attachments = []
+    attachment_errors = []
+    for position, attachment in enumerate(attachments, start=1):
+        try:
+            uploaded_attachments.append(upload_task_attachment(
+                config,
+                match['id'],
+                attachment,
+                message_id=message_id,
+                position=position,
+            ))
+        except Exception as err:
+            attachment_errors.append({
+                'filename': attachment_filename(message_id, attachment, position),
+                'error': str(err),
+            })
+
+    result = {
+        'status': 'duplicate',
+        'message_id': message_id,
+        'task_id': match.get('id'),
+        'name': match.get('name'),
+        'new_status': (match.get('status') or {}).get('status') if isinstance(match.get('status'), dict) else match.get('status'),
+        'clickup_action': 'duplicate',
+        'attachment_uploads': uploaded_attachments,
+        'attachment_count': len(uploaded_attachments),
+    }
+    if attachment_errors:
+        result['attachment_errors'] = attachment_errors
+    if uploaded_attachments:
+        result['duplicate_attachment_backfill'] = True
+    return result
+
+
 def load_state(config):
     p = state_path(config)
     if p.exists():
@@ -412,14 +467,29 @@ def save_state(config, state):
 
 def process_message(config, message_id: str, body: str, *, sender: str | None = None, timestamp: str | None = None, attachments: list[dict] | None = None):
     state = load_state(config)
+    attachments = attachments or []
+    allowed_emojis = config['routing'].get('allowed_emojis', ['📢', '📣'])
     if message_id in state['processed_ids']:
+        if attachments:
+            parsed_duplicate = parse_message(body, allowed_emojis)
+            if parsed_duplicate:
+                tasks = existing_tasks(config)
+                duplicate_result = backfill_duplicate_attachments(
+                    config,
+                    message_id=message_id,
+                    attachments=attachments,
+                    tasks=tasks,
+                )
+                if duplicate_result is not None:
+                    duplicate_result['project_guess'] = parsed_duplicate.get('project_raw')
+                    duplicate_result['clickup_target_status'] = classify_status(parsed_duplicate.get('rest') or '')
+                    return duplicate_result
         return {
             'status': 'duplicate',
             'message_id': message_id,
             'clickup_action': 'duplicate',
         }
 
-    allowed_emojis = config['routing'].get('allowed_emojis', ['📢', '📣'])
     parsed = parse_message(body, allowed_emojis)
     if not parsed:
         state['processed_ids'].append(message_id)
@@ -432,7 +502,6 @@ def process_message(config, message_id: str, body: str, *, sender: str | None = 
         }
 
     target_status = classify_status(parsed['rest'])
-    attachments = attachments or []
     context_block = build_context_block(
         sender=sender,
         timestamp=timestamp,

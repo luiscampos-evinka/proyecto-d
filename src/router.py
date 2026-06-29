@@ -6,6 +6,7 @@ from pathlib import Path
 
 from supabase_store import create_store
 from sync_clickup import DEFAULT_CONFIG_PATH, load_config, process_message
+from runtime_paths import resolve_path
 
 
 def normalize_sender(value: str) -> str:
@@ -68,7 +69,7 @@ def main():
     if not sender or not message_id or body is None:
         raise SystemExit('sender, message-id y body son requeridos')
     allowed = {normalize_sender(v) for v in config['routing'].get('allowed_senders', [])}
-    audit_log_path = Path(config['paths']['audit_log_path'])
+    audit_log_path = resolve_path(config['paths']['audit_log_path'], config_path=config.get('_config_path'))
     store = create_store(config)
 
     base_row = build_base_message_row(config, sender, message_id, body)

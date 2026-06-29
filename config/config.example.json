@@ -1,7 +1,7 @@
 {
   "project_key": "proyecto_d",
   "clickup": {
-    "token_path": "/ABSOLUTE/PATH/TO/proyecto_d_clickup_token",
+    "token_path": "../secrets/proyecto_d_clickup_token",
     "list_id": "YOUR_CLICKUP_LIST_ID",
     "api": "https://api.clickup.com/api/v2"
   },
@@ -18,7 +18,7 @@
     "visible_output": "NO_REPLY"
   },
   "supabase": {
-    "env_path": "/ABSOLUTE/PATH/TO/proyecto_d_supabase.env",
+    "env_path": "proyecto_d_supabase.env",
     "schema": "public",
     "tables": {
       "inbound_messages": "proyecto_d_inbound_messages",
@@ -27,8 +27,16 @@
     }
   },
   "paths": {
-    "state_path": "./state/whatsapp_state.json",
-    "audit_log_path": "./state/audit.log",
-    "supabase_error_log_path": "./state/supabase_errors.log"
+    "state_path": "../state/whatsapp_state.json",
+    "audit_log_path": "../state/audit.log",
+    "supabase_error_log_path": "../state/supabase_errors.log"
+  },
+  "runtime": {
+    "watcher_state_path": "../state/watcher_state.json",
+    "payload_dir": "../state/payloads",
+    "router_script": "../src/router.py",
+    "session_registry_roots": [
+      "~/.openclaw/agents"
+    ]
   }
 }

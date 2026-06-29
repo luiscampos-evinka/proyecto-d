@@ -7,10 +7,9 @@ import subprocess
 import time
 from pathlib import Path
 
-CONFIG_PATH = Path('/root/.openclaw/workspace/scripts/proyecto_d/config.json')
-STATE_PATH = Path('/root/.openclaw/workspace/state/proyecto_d_watcher_state.json')
-ROUTER = '/root/.openclaw/workspace/scripts/proyecto_d/router.py'
-PAYLOAD_DIR = Path('/root/.openclaw/workspace/state/proyecto_d/payloads')
+from runtime_paths import default_config_path, resolve_path, runtime_path, session_registry_roots
+
+CONFIG_PATH = default_config_path()
 CONVERSATION_INFO_RE = re.compile(r'Conversation info \(untrusted metadata\):\n```json\n(.*?)\n```', re.S)
 MEDIA_ATTACHED_RE = re.compile(r'^\[media attached:\s*(?P<path>.+?)\s*\((?P<mime>[^)]+)\)\]$', re.I)
 
@@ -33,7 +32,11 @@ def normalize_sender(value: str) -> str:
 
 
 def load_config():
-    return load_json(CONFIG_PATH, {})
+    config_path = CONFIG_PATH.expanduser().resolve()
+    data = load_json(config_path, {})
+    if isinstance(data, dict):
+        data['_config_path'] = str(config_path)
+    return data
 
 
 def sanitize_token(value: str) -> str:
@@ -140,22 +143,22 @@ def extract_attachments(msg: dict, message_id: str):
     return attachments
 
 
-def payload_path(message_id: str) -> Path:
-    return PAYLOAD_DIR / f"{sanitize_token(message_id)}.json"
+def payload_path(config: dict, message_id: str) -> Path:
+    payload_dir = runtime_path(config, 'payload_dir', 'state/payloads')
+    return payload_dir / f"{sanitize_token(message_id)}.json"
 
 
-def write_payload(payload: dict) -> Path:
-    path = payload_path(payload.get('message_id', 'message'))
+def write_payload(config: dict, payload: dict) -> Path:
+    path = payload_path(config, payload.get('message_id', 'message'))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
     return path
 
 
-def session_registry_paths():
-    roots = [Path('/root/.openclaw/agents')]
+def session_registry_paths(config: dict):
     out = []
     seen = set()
-    for root in roots:
+    for root in session_registry_roots(config):
         if not root.exists():
             continue
         for p in root.glob('*/sessions/sessions.json'):
@@ -166,10 +169,10 @@ def session_registry_paths():
     return out
 
 
-def session_files_from_registries():
+def session_files_from_registries(config: dict):
     files = []
     seen = set()
-    for registry in session_registry_paths():
+    for registry in session_registry_paths(config):
         data = load_json(registry, {})
         for session in data.values():
             session_file = session.get('sessionFile')
@@ -182,7 +185,7 @@ def session_files_from_registries():
     return files
 
 
-def process_session_file(session_file: Path, state: dict, allowed_senders: set[str], allowed_emojis: tuple[str, ...]):
+def process_session_file(config: dict, session_file: Path, state: dict, allowed_senders: set[str], allowed_emojis: tuple[str, ...]):
     if not session_file.exists():
         return 0
     processed = 0
@@ -219,11 +222,11 @@ def process_session_file(session_file: Path, state: dict, allowed_senders: set[s
                 'timestamp': info.get('timestamp'),
                 'attachments': attachments,
             }
-            payload_file = write_payload(payload)
+            payload_file = write_payload(config, payload)
             try:
                 subprocess.run([
                     'python3',
-                    ROUTER,
+                    str(runtime_path(config, 'router_script', 'src/router.py')),
                     '--payload-file', str(payload_file),
                 ], check=False)
             finally:
@@ -242,11 +245,12 @@ def run_once():
     routing = config.get('routing') or {}
     allowed_senders = {normalize_sender(v) for v in routing.get('allowed_senders', [])}
     allowed_emojis = tuple(routing.get('allowed_emojis', ['📢', '📣']))
-    state = load_json(STATE_PATH, {'processed_message_ids': []})
+    state_path = runtime_path(config, 'watcher_state_path', 'state/watcher_state.json')
+    state = load_json(state_path, {'processed_message_ids': []})
     processed = 0
-    for session_file in session_files_from_registries():
-        processed += process_session_file(session_file, state, allowed_senders, allowed_emojis)
-    save_json(STATE_PATH, state)
+    for session_file in session_files_from_registries(config):
+        processed += process_session_file(config, session_file, state, allowed_senders, allowed_emojis)
+    save_json(state_path, state)
     print(json.dumps({'ok': True, 'processed': processed}, ensure_ascii=False))
 
 

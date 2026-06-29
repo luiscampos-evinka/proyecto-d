@@ -125,9 +125,10 @@ Capa de observabilidad/auditoría. No sustituye a ClickUp; complementa la trazab
 
 1. Mantener este módulo separado dentro de GitHub.
 2. Versionar solo código y plantillas, nunca secretos.
-3. Agregar pruebas unitarias para parsing y clasificación.
-4. Agregar monitoreo explícito de salud del canal WhatsApp.
-5. Mantener ClickUp como destino operativo y Supabase como auditoría.
+3. Mantener la configuración portable por paths relativos o variables de entorno.
+4. Agregar pruebas unitarias para parsing y clasificación.
+5. Agregar monitoreo explícito de salud del canal WhatsApp.
+6. Mantener ClickUp como destino operativo y Supabase como auditoría.
 
 ---
 
@@ -138,6 +139,7 @@ Proyecto D ya tiene una base técnica clara, separada y profesional para operar 
 - entender cómo funciona,
 - revisar el código principal,
 - desplegarlo en otro entorno,
+- configurarlo con paths portables sin depender del VPS original,
 - documentarlo profesionalmente,
 - y publicarlo en GitHub con una narrativa técnica ordenada.
 
