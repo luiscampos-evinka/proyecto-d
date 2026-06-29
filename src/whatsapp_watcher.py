@@ -2,18 +2,17 @@
 import argparse
 import json
 import mimetypes
-import os
 import re
 import subprocess
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = PROJECT_ROOT / 'config' / 'config.json'
-STATE_PATH = PROJECT_ROOT / 'state' / 'watcher_state.json'
-ROUTER = str(PROJECT_ROOT / 'src' / 'router.py')
-PAYLOAD_DIR = PROJECT_ROOT / 'state' / 'payloads'
+CONFIG_PATH = Path('/root/.openclaw/workspace/scripts/proyecto_d/config.json')
+STATE_PATH = Path('/root/.openclaw/workspace/state/proyecto_d_watcher_state.json')
+ROUTER = '/root/.openclaw/workspace/scripts/proyecto_d/router.py'
+PAYLOAD_DIR = Path('/root/.openclaw/workspace/state/proyecto_d/payloads')
 CONVERSATION_INFO_RE = re.compile(r'Conversation info \(untrusted metadata\):\n```json\n(.*?)\n```', re.S)
+MEDIA_ATTACHED_RE = re.compile(r'^\[media attached:\s*(?P<path>.+?)\s*\((?P<mime>[^)]+)\)\]$', re.I)
 
 
 def load_json(path, default):
@@ -74,10 +73,33 @@ def extract_original_body(text):
             or line.startswith('[Queued messages while agent was busy]')
             or line.startswith('---')
             or line.startswith('Queued #')
+            or line.startswith('[media attached:')
+            or line.startswith('To send an image back, prefer the message tool')
+            or line.startswith('To send audio back, prefer the message tool')
         ):
             continue
         cleaned.append(line)
     return '\n'.join(cleaned).strip()
+
+
+def extract_media_refs_from_text(text: str, message_id: str):
+    attachments = []
+    for index, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        match = MEDIA_ATTACHED_RE.match(line)
+        if not match:
+            continue
+        media_path = match.group('path').strip()
+        mime_type = (match.group('mime') or 'application/octet-stream').strip()
+        filename = Path(media_path).name or f"{sanitize_token(message_id)}-attachment-{index}{mimetypes.guess_extension(mime_type) or ''}"
+        attachments.append({
+            'index': index,
+            'type': 'media_ref',
+            'mime_type': mime_type,
+            'filename': filename,
+            'path': media_path,
+        })
+    return attachments
 
 
 def guess_filename(message_id: str, index: int, block: dict) -> str:
@@ -90,6 +112,7 @@ def guess_filename(message_id: str, index: int, block: dict) -> str:
 
 def extract_attachments(msg: dict, message_id: str):
     attachments = []
+    text = extract_text_blocks(msg)
     for index, block in enumerate(msg.get('content', []) or [], start=1):
         block_type = block.get('type')
         if block_type == 'text':
@@ -112,6 +135,8 @@ def extract_attachments(msg: dict, message_id: str):
         if path:
             attachment['path'] = path
         attachments.append(attachment)
+    if not attachments and text:
+        attachments = extract_media_refs_from_text(text, message_id)
     return attachments
 
 
@@ -127,8 +152,7 @@ def write_payload(payload: dict) -> Path:
 
 
 def session_registry_paths():
-    env_root = os.getenv('OPENCLAW_AGENTS_ROOT', '/root/.openclaw/agents')
-    roots = [Path(env_root)]
+    roots = [Path('/root/.openclaw/agents')]
     out = []
     seen = set()
     for root in roots:

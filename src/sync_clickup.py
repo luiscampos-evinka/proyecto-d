@@ -11,8 +11,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / 'config' / 'config.json'
+DEFAULT_CONFIG_PATH = Path('/root/.openclaw/workspace/scripts/proyecto_d/config.json')
 ALIASES = {
     'CHO': 'CHORRILLOS',
     'MA': 'MAE',
@@ -192,6 +191,10 @@ def build_context_block(*, sender: str | None, timestamp: str | None, message_id
 
 
 PROJECT_SPLIT_MARKERS = [
+    ' LA INFORMACION YA SE ENCUENTRA EN SU CARPETA ',
+    ' LA INFORMACION SE ENCUENTRA EN SU CARPETA ',
+    ' LA INFORMACION YA ESTA EN SU CARPETA ',
+    ' LA INFORMACION ESTA EN SU CARPETA ',
     ' SE REACTIVA ',
     ' RECIBIMOS ',
     ' RECIBIMOS LAS RESPUESTAS ',
@@ -326,7 +329,7 @@ def classify_status(text: str):
     if any(x in n for x in [
         'PRELIMINAR', 'TERMINAN DE COMPLETAR', 'INFORMACION QUE ESTABA PENDIENTE', 'INFORMACION PENDIENTE',
         'HEMOS RECIBIDO UNA INVITACION', 'INFORMACION SE ENCUENTRA EN SU CARPETA', 'NOS LLEGO LA INVITACION',
-        'YA LLEGO LA INVITACION', 'YA ESTA EN SU CARPETA', 'ESTA EN SU CARPETA', 'RECIEN NOS COMPARTIERON LA INFORMACION INICIAL', 'DOCUMENTACION PRELIMINAR',
+        'YA LLEGO LA INVITACION', 'YA ESTA EN SU CARPETA', 'ESTA EN SU CARPETA', 'YA SE ENCUENTRA EN SU CARPETA', 'SE ENCUENTRA EN SU CARPETA', 'RECIEN NOS COMPARTIERON LA INFORMACION INICIAL', 'DOCUMENTACION PRELIMINAR',
         'ENTRO INFO NUEVA', 'DEJARON EN SU CARPETA', 'NOS COMPARTIERON LA INFORMACION INICIAL'
     ]):
         return 'revisión inicial'
